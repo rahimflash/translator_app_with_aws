@@ -1,198 +1,308 @@
-# README.md for modular structure
-# Translation Platform - Modular Terraform Structure
+# AWS Translation Platform - Architecture & Design
 
-## 📁 Directory Structure
+## High-Level Architecture
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Client/CLI    │───▶│   API Gateway    │───▶│  Lambda Function│
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+                                                        │
+                                                        ▼
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   S3 Output     │◀───│  AWS Translate   │◀───│  Lambda Trigger │
+│    Bucket       │    │    Service       │    │      Logic      │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+                                                        │
+                                                        ▼
+                               ┌─────────────────┐    ┌─────────────────┐
+                               │   S3 Input      │◀───│   JSON File     │
+                               │    Bucket       │    │   Processing    │
+                               └─────────────────┘    └─────────────────┘
+```
+
+## Detailed Component Architecture
+
+### Core Components
+
+**1. API Gateway**
+- REST API endpoint for translation requests
+- Request validation and throttling
+- Integration with Lambda function
+
+**2. Lambda Function (Translation Processor)**
+- Processes JSON input files
+- Orchestrates AWS Translate calls
+- Manages S3 operations
+- Error handling and logging
+
+**3. S3 Buckets**
+- Input bucket: Stores source JSON files
+- Output bucket: Stores translated results
+- Versioning enabled for audit trail
+
+**4. AWS Translate**
+- Handles actual translation processing
+- Supports 75+ languages
+- Auto-detection capabilities
+
+**5. CloudWatch**
+- Logging and monitoring
+- Performance metrics
+- Error tracking
+
+## Low-Level Design
+
+### Data Flow
+
+1. **Input Processing**
+   ```json
+   {
+     "source_language": "en",
+     "target_languages": ["es", "fr", "de"],
+     "sentences": [
+       "Hello world",
+       "This is a test sentence"
+     ]
+   }
+   ```
+
+2. **Translation Processing**
+   - Lambda extracts sentences from JSON
+   - Iterates through target languages
+   - Calls AWS Translate for each sentence/language pair
+   - Aggregates results
+
+3. **Output Generation**
+   ```json
+   {
+     "translation_id": "uuid-here",
+     "source_language": "en",
+     "timestamp": "2025-07-20T10:30:00Z",
+     "translations": {
+       "es": ["Hola mundo", "Esta es una oración de prueba"],
+       "fr": ["Bonjour le monde", "Ceci est une phrase de test"],
+       "de": ["Hallo Welt", "Das ist ein Testsatz"]
+     }
+   }
+   ```
+
+### Lambda Function Logic
+
+```python
+import json
+import boto3
+import uuid
+from datetime import datetime
+
+def lambda_handler(event, context):
+    # Initialize AWS services
+    translate = boto3.client('translate')
+    s3 = boto3.client('s3')
+    
+    # Parse input
+    input_data = json.loads(event['body'])
+    
+    # Process translations
+    result = process_translations(translate, input_data)
+    
+    # Store result in S3
+    output_key = f"translations/{uuid.uuid4()}.json"
+    store_result(s3, result, output_key)
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps({
+            'message': 'Translation completed',
+            'output_location': output_key
+        })
+    }
+```
+
+## Infrastructure Components
+
+### Terraform Structure
 
 ```
 terraform/
-├── main.tf                    # Root configuration with module calls
-├── variables.tf               # Root variables
-├── outputs.tf                 # Root outputs
-├── lambda_function.py         # Lambda function code
-├── terraform.tfvars.example   # Example configuration
+├── main.tf              # Main configuration
+├── variables.tf         # Input variables
+├── outputs.tf          # Output values
 ├── modules/
-│   ├── iam/                   # IAM roles and policies
-│   │   ├── main.tf
-│   │   └── outputs.tf
-│   ├── s3/                    # S3 buckets and configurations
-│   │   ├── main.tf
-│   │   └── outputs.tf
-│   ├── lambda/                # Lambda function and logs
-│   │   ├── main.tf
-│   │   └── outputs.tf
-│   └── api-gateway/           # API Gateway and related resources
-│       ├── main.tf
-│       └── outputs.tf
-├── environments/
-│   ├── dev/
-│   │   ├── main.tf            # Dev environment configuration
-│   │   └── terraform.tfvars   # Dev-specific variables
-│   └── prod/
-│       ├── main.tf            # Prod environment configuration
-│       └── terraform.tfvars   # Prod-specific variables
-└── deployment/
-    ├── deploy_modular.sh      # Deployment script
-    ├── destroy_modular.sh     # Destruction script
-    └── validate_modular.sh    # Validation script
+│   ├── api-gateway/    # API Gateway module
+│   ├── lambda/         # Lambda function module
+│   ├── s3/            # S3 buckets module
+│   └── iam/           # IAM roles and policies
+└── environments/
+    ├── dev/
+    └── prod/
 ```
 
-## 🚀 Quick Start
+### Key AWS Resources
 
-### 1. Deploy Development Environment
+1. **S3 Buckets**
+   - `translation-input-bucket-{env}`
+   - `translation-output-bucket-{env}`
+   - Versioning and lifecycle policies
+
+2. **Lambda Function**
+   - Runtime: Python 3.9+
+   - Memory: 512MB
+   - Timeout: 5 minutes
+   - Environment variables for bucket names
+
+3. **API Gateway**
+   - REST API with POST method
+   - CORS enabled
+   - Request/response mapping
+
+4. **IAM Roles & Policies**
+   - Lambda execution role
+   - S3 read/write permissions
+   - Translate service permissions
+
+5. **CloudWatch**
+   - Log groups for Lambda
+   - Custom metrics
+   - Alarms for error rates
+
+## Security Best Practices
+
+### Access Control
+- Least privilege IAM policies
+- API Gateway authentication (API keys)
+- S3 bucket policies with restricted access
+- VPC endpoints for internal communication
+
+### Data Protection
+- S3 server-side encryption (SSE-S3)
+- HTTPS-only communication
+- Input validation and sanitization
+- Rate limiting on API Gateway
+
+### Monitoring & Logging
+- CloudWatch logs for all components
+- AWS X-Ray for distributed tracing
+- CloudTrail for API audit logs
+- Custom metrics for business logic
+
+## Implementation Guide
+
+### Prerequisites
+- AWS CLI configured
+- Terraform installed
+- Python 3.9+ for local testing
+
+### Deployment Steps
+
+1. **Clone and Configure**
+   ```bash
+   git clone <repository>
+   cd translation-platform
+   cp terraform/environments/dev/terraform.tfvars.example terraform.tfvars
+   # Edit terraform.tfvars with your values
+   ```
+
+2. **Deploy Infrastructure**
+   ```bash
+   cd terraform
+   terraform init
+   terraform plan
+   terraform apply
+   ```
+
+3. **Test Deployment**
+   ```bash
+   # Using CLI
+   curl -X POST https://api-id.execute-api.region.amazonaws.com/dev/translate \
+     -H "Content-Type: application/json" \
+     -d '{
+       "source_language": "en",
+       "target_languages": ["es", "fr"],
+       "sentences": ["Hello world", "How are you?"]
+     }'
+   ```
+
+### CLI Tool Usage
 
 ```bash
-# Clone and navigate to terraform directory
-cd terraform/
+# Install CLI tool
+pip install translation-platform-cli
 
-# Deploy dev environment
-make apply-dev
-# OR
-./deployment/deploy_modular.sh dev eu-west-1
+# Configure
+translation-cli configure --api-endpoint <endpoint> --api-key <key>
+
+# Translate
+translation-cli translate \
+  --source-lang en \
+  --target-langs es,fr,de \
+  --input sentences.json \
+  --output results/
 ```
 
-### 2. Deploy Production Environment
+## Cost Optimization
 
-```bash
-# Deploy prod environment
-make apply-prod
-# OR
-./deployment/deploy_modular.sh prod eu-west-1
-```
+### Estimated Monthly Costs (1M translations)
+- **Lambda**: ~$5-10 (based on execution time)
+- **API Gateway**: ~$3.50 (1M requests)
+- **AWS Translate**: ~$15 (1M characters)
+- **S3**: ~$1-2 (storage and requests)
+- **Total**: ~$25-30/month
 
-### 3. Validate Configuration
+### Optimization Strategies
+- Use S3 lifecycle policies for old translations
+- Implement Lambda reserved concurrency
+- Cache common translations
+- Batch processing for large datasets
 
-```bash
-# Validate all modules and environments
-make validate
-# OR
-./deployment/validate_modular.sh
-```
+## Monitoring & Maintenance
 
-## 🔧 Module Breakdown
+### Key Metrics
+- Translation success rate
+- Average response time
+- Error rates by language pair
+- S3 storage utilization
 
-### **IAM Module (`modules/iam/`)**
-- **Purpose**: Manages IAM roles and policies
-- **Resources**:
-  - Lambda execution role
-  - S3 access policies
-  - Translate service permissions
-- **Outputs**: Role ARNs for other modules
+### Alerting
+- Lambda function errors
+- API Gateway 4xx/5xx errors
+- High translation costs
+- S3 bucket access issues
 
-### **S3 Module (`modules/s3/`)**
-- **Purpose**: Manages S3 buckets for input/output
-- **Resources**:
-  - Input bucket with versioning
-  - Output bucket with versioning
-  - Encryption configurations
-  - Public access blocks
-  - Lifecycle policies
-- **Outputs**: Bucket names and ARNs
+### Backup & Recovery
+- S3 cross-region replication
+- Lambda function versioning
+- Infrastructure as Code for quick recovery
+- Regular backup testing
 
-### **Lambda Module (`modules/lambda/`)**
-- **Purpose**: Manages Lambda function and logging
-- **Resources**:
-  - Lambda function with environment variables
-  - CloudWatch log group
-  - Function packaging
-- **Outputs**: Function ARN and name
+## Scalability Considerations
 
-### **API Gateway Module (`modules/api-gateway/`)**
-- **Purpose**: Manages API Gateway and related resources
-- **Resources**:
-  - REST API with validation
-  - CORS configuration
-  - Usage plans and API keys
-  - Lambda integration
-- **Outputs**: API endpoint URL and keys
+### Current Limits
+- Lambda: 1000 concurrent executions
+- API Gateway: 10,000 requests/second
+- AWS Translate: 20 transactions/second (default)
 
-## 🌍 Environment Management
+### Scaling Strategies
+- Request AWS Translate limit increases
+- Implement SQS for async processing
+- Use multiple Lambda functions
+- Add CloudFront for caching
 
-### Development Environment (`environments/dev/`)
-- **Characteristics**:
-  - Lower resource limits
-  - Shorter log retention (7 days)
-  - Reduced API quotas
-  - Smaller Lambda memory allocation
+## Future Enhancements
 
-### Production Environment (`environments/prod/`)
-- **Characteristics**:
-  - Higher resource limits
-  - Longer log retention (30 days)
-  - Higher API quotas
-  - Larger Lambda memory allocation
-  - Enhanced monitoring
+1. **Advanced Features**
+   - Custom terminology support
+   - Translation confidence scores
+   - Batch file processing
+   - Real-time translation streaming
 
-## 📋 Common Commands
+2. **Integration Options**
+   - Webhook notifications
+   - Database storage options
+   - Multi-region deployment
+   - Custom ML models
 
-```bash
-# Validate all configurations
-make validate
-
-# Development workflow
-make dev-workflow    # Validate, init, and plan dev
-make apply-dev       # Apply dev environment
-
-# Production workflow  
-make prod-workflow   # Validate, init, and plan prod
-make apply-prod      # Apply prod environment
-
-# Testing
-make test ENDPOINT=https://api-url API_KEY=key
-
-# Cleanup
-make destroy-dev     # Destroy dev environment
-make destroy-prod    # Destroy prod environment
-make clean          # Clean temporary files
-```
-
-## 🔒 Security Features
-
-- **Least Privilege IAM**: Each module has minimal required permissions
-- **Resource Isolation**: Separate state files per environment
-- **Encrypted Storage**: S3 buckets encrypted by default
-- **API Security**: API keys and rate limiting
-- **Network Security**: Private API endpoints option
-
-## 📊 Benefits of Modular Structure
-
-1. **Reusability**: Modules can be reused across environments
-2. **Maintainability**: Easier to update specific components
-3. **Testing**: Individual modules can be tested separately
-4. **Scalability**: Easy to add new environments or modify existing ones
-5. **Collaboration**: Teams can work on different modules independently
-6. **State Management**: Separate state files reduce blast radius
-
-## 🔄 Deployment Workflow
-
-1. **Validate** all configurations
-2. **Initialize** Terraform for target environment
-3. **Plan** deployment and review changes
-4. **Apply** changes after approval
-5. **Test** deployed infrastructure
-6. **Monitor** through CloudWatch
-
-## 📈 Scaling Considerations
-
-- **Multi-Region**: Easy to replicate in different regions
-- **Multi-Account**: Can be deployed across AWS accounts
-- **Module Versioning**: Pin module versions for stability
-- **State Locking**: Use remote state with DynamoDB locking
-- **CI/CD Integration**: Easily integrated with GitLab/GitHub Actions
-
-## 🛠️ Customization
-
-Each environment can be customized by modifying the respective `terraform.tfvars`:
-
-```hcl
-# environments/dev/terraform.tfvars
-environment = "dev"
-lambda_memory_size = 256
-api_rate_limit = 50
-log_retention_days = 7
-
-# environments/prod/terraform.tfvars
-environment = "prod"
-lambda_memory_size = 1024
-api_rate_limit = 500
-log_retention_days = 30
-```
+3. **User Interface**
+   - Web dashboard
+   - Translation history
+   - Analytics and reporting
+   - User management
