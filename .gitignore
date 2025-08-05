@@ -1,0 +1,5 @@
+.venv
+creds
+translation_results.json
+downloads/
+terraform_old

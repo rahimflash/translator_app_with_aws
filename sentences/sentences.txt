@@ -1,0 +1,8 @@
+# Create support phrases
+
+Hello, how can I help you today?
+Thank you for contacting customer support
+We appreciate your patience while we resolve this
+Your request has been received and is being processed
+Is there anything else I can assist you with?
+Have a wonderful day and thank you for choosing us

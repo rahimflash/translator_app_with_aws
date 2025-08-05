@@ -1,0 +1,5 @@
+{
+    "source_language": "en",
+    "target_languages": ["es", "fr", "de"],
+    "sentences": ["Hello World", "How are you?", "Do you need help?"]
+  }

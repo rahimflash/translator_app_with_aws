@@ -1,0 +1,9 @@
+{
+  "sentences": [
+    "Bank account balance",
+    "River bank erosion", 
+    "Memory bank storage"
+  ],
+  "contexts": ["finance", "geography", "technology"],
+  "note": "Same word 'bank' but different contexts"
+}
