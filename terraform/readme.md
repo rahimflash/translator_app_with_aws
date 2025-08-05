@@ -1,4 +1,3 @@
-# README.md for modular structure
 # Translation Platform - Modular Terraform Structure
 
 ## 📁 Directory Structure
